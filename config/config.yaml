@@ -2,12 +2,16 @@ experiment:
     id: experiment_id
     seed: 6492
 
-##Data
 data:
-    name: 'pb' # either "pb" or "map"
-    maps: "./samples/maps/field.png"
-    map_out_name: "./results/map_rgb.png"
-    root_dir: "./samples/network"
+  name: "RedEdge"  # <--- CHANGE THIS to match the new dataset name
+  root_dir: "./samples/RedEdge"
+  fields: ["000", "001", "002", "003", "004"] # For training
+  val_fields: ["000"]                        # For validation
+  test_fields: ["000"]                       # For testing (optional, if you implement test_dataloader fully)
+  band_channels_list: ["R", "G", "B"] 
+  gt_folder_name: "groundtruth"
+  #target_size: [1024, 1024] # Add this if you want to configure resize target
+
 
 ##Training
 train:

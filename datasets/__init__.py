@@ -1,11 +1,12 @@
-from datasets.MapData import MapData
-from datasets.PhenoBench import PhenoBench
+# File: datasets/__init__.py
 
+from .PhenoBench import PhenoBench # Your existing one
+from .RedEdgeDataset import RedEdgeDataModule # Import the new one
 
 def get_dataset(name, dataset_opts):
-    if name == "pb":
+    if name == "PhenoBench":
         return PhenoBench(dataset_opts)
-    elif name == "map":
-        return MapData(dataset_opts)
+    elif name == "RedEdge": # Or "WeedMap" or whatever you named it
+        return RedEdgeDataModule(dataset_opts) # Use the new module
     else:
-        raise RuntimeError("Dataset {} not available".format(name))
+        raise ValueError("Dataset class not found for {}".format(name))
