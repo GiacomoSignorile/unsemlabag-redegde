@@ -1,38 +1,30 @@
-# File: datasets/RedEdgeDataset.py
-
 import os
 import random
 import numpy as np
 from PIL import Image
+import tifffile # Ensure this is imported
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import Dataset, DataLoader
-import tifffile
-
 from utils.transforms import Transforms
 
+
 class RedEdgeDataModule(LightningDataModule):
-    # ... (constructor and dataloader methods remain the same as the last correct version) ...
     def __init__(self, full_cfg):
         super().__init__()
         self.full_cfg = full_cfg
         data_cfg = self.full_cfg.get("data", {})
-        if not data_cfg:
-            raise ValueError("'data' section not found in the configuration.")
-        self.root_dir = data_cfg.get("root_dir")
-        if self.root_dir is None:
-            raise KeyError("'root_dir' not found in data configuration.")
+        if not data_cfg: raise ValueError("'data' section not found.")
+        self.root_dir = data_cfg.get("root_dir") # This will be "./samples/RedEdge_Patches_224"
+        if self.root_dir is None: raise KeyError("'root_dir' not found.")
 
-        self.train_fields = data_cfg.get("fields", [])
+        self.train_fields = data_cfg.get("train_fields", [])
         self.val_fields = data_cfg.get("val_fields", self.train_fields)
-        self.test_fields = data_cfg.get("test_fields", self.val_fields)
-        
-        # image_sources_type can be "composite" (looks for composite_image_filename)
-        # or "bands" (looks for R,G,B specified in channels_list)
-        self.image_sources_type = data_cfg.get("image_sources_type", "composite") # "composite" or "bands"
-        self.composite_image_filename = data_cfg.get("composite_image_filename", "RGB.png") # e.g., "RGB.png"
-        self.band_channels_list = data_cfg.get("band_channels_list", ["R", "G", "B"]) # e.g., ["R", "G", "B"]
+        self.test_fields = data_cfg.get("test_fields", []) # Explicitly get test_fields
 
-        self.gt_folder_name = data_cfg.get("gt_folder_name", "groundtruth")
+        # New params from config for patched data
+        self.patched_image_subfolder_template = data_cfg.get("patched_image_subfolder_template", "images/{composite_rgb_name}")
+        self.composite_rgb_name = data_cfg.get("composite_rgb_name", "RGB")
+        self.patched_gt_subfolder_parent = data_cfg.get("patched_gt_subfolder_parent", "semantics")
         
         train_params_cfg = self.full_cfg.get("train", {})
         self.batch_size = train_params_cfg.get("batch_size", data_cfg.get("batch_size", 4))
@@ -41,26 +33,24 @@ class RedEdgeDataModule(LightningDataModule):
         
         self.dataset_init_args = {
             "root_dir": self.root_dir,
-            "image_sources_type": self.image_sources_type,
-            "composite_image_filename": self.composite_image_filename,
-            "band_channels_list": self.band_channels_list,
-            "gt_folder_name": self.gt_folder_name,
-            "target_size": data_cfg.get("target_size", (1024, 1024))
+            "patched_image_subfolder_template": self.patched_image_subfolder_template,
+            "composite_rgb_name": self.composite_rgb_name,
+            "patched_gt_subfolder_parent": self.patched_gt_subfolder_parent,
+            "target_size": data_cfg.get("target_size", (224, 224)) # Should match patch size
         }
-        self.train_dataset = None
-        self.val_dataset = None
-        self.test_dataset = None
+        self.train_dataset, self.val_dataset, self.test_dataset = None, None, None
 
     def setup(self, stage=None):
         if stage == "fit" or stage is None:
             if self.train_fields:
                 self.train_dataset = RedEdgeDataset(fields=self.train_fields, **self.dataset_init_args)
             if self.val_fields:
-                self.val_dataset = RedEdgeDataset(fields=self.val_fields, **self.dataset_init_args)
+                self.val_dataset = RedEdgeDataset(fields=self.val_fields, **self.dataset_init_args) # No is_train for Unsemlabag Transforms
         if stage == "test" or stage is None:
             if self.test_fields:
                  self.test_dataset = RedEdgeDataset(fields=self.test_fields, **self.dataset_init_args)
     
+    # Dataloaders remain the same
     def train_dataloader(self):
         if not self.train_dataset: self.setup(stage="fit")
         if not self.train_dataset: print("Warning: Train dataloader - train_dataset not available."); return None
@@ -76,188 +66,130 @@ class RedEdgeDataModule(LightningDataModule):
 
 
 class RedEdgeDataset(Dataset):
-    def __init__(self, root_dir, fields, image_sources_type, 
-                 composite_image_filename, band_channels_list, 
-                 gt_folder_name, target_size=(1024,1024)):
+    def __init__(self, root_dir, fields, 
+                 patched_image_subfolder_template, composite_rgb_name, 
+                 patched_gt_subfolder_parent, 
+                 target_size=(224,224)): # target_size is now mainly for reference
         super().__init__()
         self.root_dir = root_dir
         self.fields = fields
-        self.image_sources_type = image_sources_type
-        self.composite_image_filename = composite_image_filename
-        self.band_channels_list = band_channels_list
-        self.gt_folder_name = gt_folder_name
-        self.target_size = target_size
+        self.patched_image_subfolder = patched_image_subfolder_template.format(composite_rgb_name=composite_rgb_name)
+        self.patched_gt_subfolder_parent = patched_gt_subfolder_parent
+        self.target_size = target_size # Patches should already be this size
         self.transform = Transforms()
 
         self.file_index = []
-        print(f"--- Initializing RedEdgeDataset ---")
+        print(f"--- Initializing RedEdgeDataset (Patched) ---")
         print(f"Root dir: {os.path.abspath(root_dir)}")
-        print(f"Fields: {fields}")
-        print(f"Image sources type: {image_sources_type}")
-        if image_sources_type == "composite":
-            print(f"Composite image filename: {composite_image_filename}")
-        else:
-            print(f"Band channels list: {band_channels_list}")
-        print(f"GT folder name: {gt_folder_name}")
+        print(f"Fields to load patches from: {fields}")
+        print(f"Image patches expected in: ...field_id/{self.patched_image_subfolder}/<patch_name>.png")
+        print(f"GT patches expected in:    ...field_id/{self.patched_gt_subfolder_parent}/<original_gt_basename>/<patch_name>.png")
 
-        for field_name in self.fields:
-            print(f"Processing field: {field_name}")
-            field_gt_path_root = os.path.join(self.root_dir, field_name, self.gt_folder_name)
-            print(f"  Attempting GT root path: {field_gt_path_root} (exists: {os.path.isdir(field_gt_path_root)})")
+        for field_id in self.fields:
+            print(f"Processing field for patches: {field_id}")
+            
+            current_image_patch_dir = os.path.join(self.root_dir, field_id, self.patched_image_subfolder)
+            current_gt_patch_parent_dir = os.path.join(self.root_dir, field_id, self.patched_gt_subfolder_parent)
 
-            if not os.path.isdir(field_gt_path_root):
-                print(f"  WARNING: GT path for field {field_name} does not exist or is not a directory.")
+            if not os.path.isdir(current_image_patch_dir):
+                print(f"  WARNING: Image patch directory not found: {current_image_patch_dir}")
+                continue
+            if not os.path.isdir(current_gt_patch_parent_dir):
+                print(f"  WARNING: GT patch parent directory not found: {current_gt_patch_parent_dir}")
+                continue
+
+            # Find subfolders in GT patch parent dir (these are named after original GT files)
+            # e.g., 'first000_gt', 'another_gt_basename'
+            gt_patch_subfolders = [d for d in os.listdir(current_gt_patch_parent_dir) if os.path.isdir(os.path.join(current_gt_patch_parent_dir, d))]
+            if not gt_patch_subfolders:
+                print(f"  WARNING: No GT patch subfolders found in {current_gt_patch_parent_dir}")
                 continue
             
-            # Iterate through ground truth files first
-            gt_filenames_in_folder = os.listdir(field_gt_path_root)
-            print(f"  Found {len(gt_filenames_in_folder)} files/dirs in GT folder: {gt_filenames_in_folder[:5]}...")
+            # For simplicity, assume we use all GTs if multiple, or just one if it's always one-to-one
+            # With current run_preprocessing.py, there's one GT subfolder per original GT file.
+            # If an RGB.png corresponds to ONE first000_gt.png, then we just need to find its patch folder.
+            # Let's assume the first GT subfolder found is the one corresponding to the images in patched_image_subfolder
+            # This assumption holds if your run_preprocessing.py creates RGB/ and first000_gt/ (for example)
+            
+            # A more robust way: if you know the original GT filename associated with the RGB patches
+            # For now, let's try to be a bit more general if there's only one GT subfolder.
+            # If there are multiple, this logic might need to be smarter or the run_preprocessing.py
+            # should ensure a clear mapping.
+            
+            # Let's iterate through image patches and try to find a corresponding GT patch
+            for image_patch_filename in os.listdir(current_image_patch_dir):
+                if not image_patch_filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    continue
 
-            for gt_filename in gt_filenames_in_folder:
-                if not gt_filename.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff')):
-                    continue # Skip non-image files in GT folder
-
-                print(f"    Processing GT file: {gt_filename}")
-                current_gt_full_path = os.path.join(field_gt_path_root, gt_filename)
-                image_path_to_use = None
+                image_patch_full_path = os.path.join(current_image_patch_dir, image_patch_filename)
+                found_corresponding_gt = False
                 
-                if self.image_sources_type == "composite":
-                    # Look for the specific composite image filename (e.g., RGB.png)
-                    # in the 'composite-png' folder of the current field
-                    expected_composite_image_path = os.path.join(self.root_dir, field_name, "composite-png", self.composite_image_filename)
-                    print(f"      Checking specific composite image path: {expected_composite_image_path}")
-                    if os.path.exists(expected_composite_image_path):
-                        image_path_to_use = expected_composite_image_path
-                        print(f"      ---> COMPOSITE IMAGE FOUND: {image_path_to_use}")
-                    else:
-                        print(f"      ---> COMPOSITE IMAGE '{self.composite_image_filename}' NOT FOUND at: {expected_composite_image_path}")
+                for gt_subfolder_name in gt_patch_subfolders: # e.g., "first000_gt"
+                    gt_patch_full_path = os.path.join(current_gt_patch_parent_dir, gt_subfolder_name, image_patch_filename) # Use same patch filename
+                    
+                    if os.path.exists(gt_patch_full_path):
+                        self.file_index.append({
+                            "image_patch_path": image_patch_full_path,
+                            "gt_patch_path": gt_patch_full_path,
+                            "name_id": f"{field_id}/patch_{image_patch_filename}"
+                        })
+                        found_corresponding_gt = True
+                        break # Found corresponding GT patch for this image patch
                 
-                elif self.image_sources_type == "bands":
-                    # This part is more complex if band filenames don't match GT filenames.
-                    # For now, let's assume band files (R.png, G.png, B.png) exist for each scene/GT.
-                    # This implies a 1-to-1 mapping between a GT file and a set of band files for that scene.
-                    # The current structure (R.png, G.png) suggests these are fixed names per field, not per GT file.
-                    # This logic needs to be robust if there are multiple GTs and one set of R,G,B per field.
-                    # For simplicity now, assume one main set of bands per field.
-                    band_paths = {}
-                    all_bands_found = True
-                    for band_name in self.band_channels_list:
-                        # Assuming bands are in 'composite-png' or directly in field folder
-                        # Let's assume they are in 'composite-png' as per screenshot
-                        band_file_path = os.path.join(self.root_dir, field_name, "composite-png", f"{band_name}.png") # e.g., R.png
-                        print(f"      Checking band path: {band_file_path}")
-                        if os.path.exists(band_file_path):
-                            band_paths[band_name] = band_file_path
-                            print(f"      ---> BAND '{band_name}' FOUND: {band_file_path}")
-                        else:
-                            print(f"      ---> BAND '{band_name}' NOT FOUND at: {band_file_path}")
-                            all_bands_found = False
-                            break
-                    if all_bands_found and band_paths:
-                        image_path_to_use = band_paths # Store dict of band paths
-                    else:
-                         print(f"      ---> NOT ALL BANDS FOUND for field {field_name}. Required: {self.band_channels_list}")
-
-                else:
-                    print(f"    Unknown image_sources_type: {self.image_sources_type}")
-
-
-                if image_path_to_use is not None:
-                    print(f"    ---> VALID ENTRY for GT '{gt_filename}'. Using image source(s): {image_path_to_use}. Adding to index.")
-                    self.file_index.append({
-                        "image_sources_location": image_path_to_use, # Can be a single path or a dict of paths
-                        "gt": current_gt_full_path,
-                        "name_id": f"{field_name}/{gt_filename}" # For identification
-                    })
-                else:
-                    print(f"    ---> IMAGE SOURCE NOT FOUND for GT '{gt_filename}'. Skipping.")
+                if not found_corresponding_gt:
+                    print(f"  WARNING: No corresponding GT patch found for image patch: {image_patch_full_path} in any of {gt_patch_subfolders}")
         
         if not self.file_index:
-            print(f"FINAL WARNING: No files were added to the index. file_index is empty.")
+            print(f"FINAL WARNING (Patched): No patch pairs were added to the index.")
         else:
-            print(f"--- RedEdgeDataset Initialized. Found {len(self.file_index)} valid items. ---")
+            print(f"--- RedEdgeDataset (Patched) Initialized. Found {len(self.file_index)} patch pairs. ---")
 
     def __len__(self):
-        return self.real_size if hasattr(self, 'real_size') and self.real_size is not None else len(self.file_index)
-
+        return len(self.file_index)
 
     def __getitem__(self, index):
         entry = self.file_index[index]
         sample = {}
 
-        if self.image_sources_type == "composite":
-            image_pil = Image.open(entry["image_sources_location"]).convert("RGB")
-        elif self.image_sources_type == "bands":
-            pil_images = []
-            for ch_key in ["R", "G", "B"]: 
-                if ch_key in entry["image_sources_location"]:
-                    pil_images.append(Image.open(entry["image_sources_location"][ch_key]).convert("L"))
-            if len(pil_images) == 3:
-                resized_pil_channels = [img.resize(self.target_size, Image.BILINEAR) for img in pil_images]
-                image_np_list = [np.array(img) for img in resized_pil_channels]
-                image_np_stacked = np.stack(image_np_list, axis=-1)
-                image_pil = Image.fromarray(image_np_stacked)
-            elif len(pil_images) == 1: image_pil = pil_images[0].convert("RGB")
-            elif pil_images: image_pil = pil_images[0].convert("RGB")
-            else: raise ValueError(f"Could not load bands for {entry['name_id']}. Sources: {entry['image_sources_location']}")
-        else: raise ValueError(f"Invalid image_sources_type in __getitem__: {self.image_sources_type}")
-        image_resized_pil = image_pil.resize(self.target_size, Image.BILINEAR)
-        sample["image"] = np.array(image_resized_pil).astype(np.uint8)
+        # Load image patch (should already be target_size and RGB)
+        image_pil = Image.open(entry["image_patch_path"]).convert("RGB")
+        # Patches are already 224x224, so resize might be redundant but harmless if target_size is also 224x224
+        if image_pil.size != self.target_size:
+            image_pil = image_pil.resize(self.target_size, Image.BILINEAR)
+        sample["image"] = np.array(image_pil).astype(np.uint8) # For Unsemlabag's Transforms
 
-        # --- Semantic Label Processing ---
-        gt_path = entry["gt"]
+        # Load GT patch
+        gt_patch_path = entry["gt_patch_path"]
         gt_np_rgb = None
-
-        if gt_path.lower().endswith(('.tif', '.tiff')):
-            # Use tifffile for .tif images
-            tiff_img_data = tifffile.imread(gt_path)
-            # Assuming tiff_img_data is HWC or HW (if single channel but color-mapped by some viewers)
-            # We need to ensure it's a 3-channel RGB-like array for consistent processing
-            if tiff_img_data.ndim == 2: # Grayscale TIFF, try to make it RGB
-                # This assumption might be wrong if the TIF isn't meant to be color.
-                # If it's a label TIF already, this conversion is not what you want.
-                # However, the error was on .convert("RGB"), implying it was trying to treat it as color.
-                print(f"Warning: GT TIFF {gt_path} is 2D. Interpreting as grayscale and converting to RGB.")
-                gt_np_rgb = np.stack([tiff_img_data]*3, axis=-1)
-            elif tiff_img_data.ndim == 3 and tiff_img_data.shape[2] >= 3:
-                gt_np_rgb = tiff_img_data[:, :, :3] # Take first 3 channels (R,G,B)
-            else:
-                raise ValueError(f"Unsupported TIFF format for GT: {gt_path}, shape: {tiff_img_data.shape}")
-            
-            # Convert gt_np_rgb to PIL Image to use PIL's resize with NEAREST
-            # Ensure it's uint8 if not already
-            if gt_np_rgb.dtype != np.uint8:
-                 # Handle potential float tiffs - scale to 0-255 if they are in 0-1 or other ranges
-                if gt_np_rgb.max() <= 1.0 and gt_np_rgb.min() >= 0.0: # float 0-1
-                    gt_np_rgb = (gt_np_rgb * 255).astype(np.uint8)
-                elif gt_np_rgb.max() > 255: # e.g. 16-bit tiff
-                     gt_np_rgb = (gt_np_rgb / gt_np_rgb.max() * 255).astype(np.uint8) # simple scaling
-                else:
-                    gt_np_rgb = gt_np_rgb.astype(np.uint8)
-
-            gt_pil_from_tiff = Image.fromarray(gt_np_rgb.astype(np.uint8))
-            gt_resized_pil = gt_pil_from_tiff.resize(self.target_size, Image.NEAREST)
-            gt_np_rgb = np.array(gt_resized_pil)
-
-        else: # For .png, .jpg, etc.
-            gt_pil = Image.open(gt_path).convert("RGB")
-            gt_resized_pil = gt_pil.resize(self.target_size, Image.NEAREST)
-            gt_np_rgb = np.array(gt_resized_pil)
+        if gt_patch_path.lower().endswith(('.tif', '.tiff')):
+            tiff_img_data = tifffile.imread(gt_patch_path)
+            if tiff_img_data.ndim == 2: gt_np_rgb = np.stack([tiff_img_data]*3, axis=-1)
+            elif tiff_img_data.ndim == 3 and tiff_img_data.shape[2] >= 3: gt_np_rgb = tiff_img_data[:, :, :3]
+            else: raise ValueError(f"Unsupported TIFF GT patch: {gt_patch_path}")
+            if gt_np_rgb.dtype != np.uint8: # Scale if necessary
+                if gt_np_rgb.max() <= 1.0 and gt_np_rgb.min() >= 0.0: gt_np_rgb = (gt_np_rgb * 255)
+                elif gt_np_rgb.max() > 255 : gt_np_rgb = (gt_np_rgb / gt_np_rgb.max() * 255)
+                gt_np_rgb = gt_np_rgb.astype(np.uint8)
+            gt_pil_from_tiff = Image.fromarray(gt_np_rgb) # Now HWC uint8
+            if gt_pil_from_tiff.size != self.target_size: # Resize if patch wasn't exact (should be)
+                 gt_pil_from_tiff = gt_pil_from_tiff.resize(self.target_size, Image.NEAREST)
+            gt_np_rgb = np.array(gt_pil_from_tiff)
+        else:
+            gt_pil = Image.open(gt_patch_path).convert("RGB")
+            if gt_pil.size != self.target_size: # Resize if patch wasn't exact
+                gt_pil = gt_pil.resize(self.target_size, Image.NEAREST)
+            gt_np_rgb = np.array(gt_pil)
         
-        # Common processing for gt_np_rgb (now it's always a NumPy array from PIL or TIFF)
         height, width, _ = gt_np_rgb.shape
         semantics_map_hw = np.zeros((height, width), dtype=np.uint8)
-        
         crop_mask = (gt_np_rgb[:, :, 1] > 100) & (gt_np_rgb[:, :, 0] < 128) & (gt_np_rgb[:, :, 2] < 128)
         semantics_map_hw[crop_mask] = 1
-        
         weed_mask = (gt_np_rgb[:, :, 0] > 100) & (gt_np_rgb[:, :, 1] < 128) & (gt_np_rgb[:, :, 2] < 128)
         semantics_map_hw[weed_mask] = 2
-
         sample["semantics"] = semantics_map_hw.astype(np.uint8)
+        
         sample["name"] = entry["name_id"]
 
         if self.transform is not None:
             sample = self.transform(sample)
-
         return sample

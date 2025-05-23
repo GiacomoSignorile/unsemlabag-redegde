@@ -4,9 +4,9 @@ experiment:
 
 data:
   name: "RedEdge"  # <--- CHANGE THIS to match the new dataset name
-  root_dir: "./samples/RedEdge"
-  fields: ["000", "001", "002", "003", "004"] # For training
-  val_fields: ["000"]                        # For validation
+  root_dir: "./samples/RedEdge_Patches_224/"
+  train_fields: ["001", "002", "003"] # For training
+  val_fields: ["004"]                        # For validation
   test_fields: ["000"]                       # For testing (optional, if you implement test_dataloader fully)
   band_channels_list: ["R", "G", "B"] 
   gt_folder_name: "groundtruth"
@@ -16,7 +16,7 @@ data:
 ##Training
 train:
     n_gpus: 1
-    workers: 0
+    workers: 0 # Number of workers for data loading for my cpu i7
     max_epoch: 100
     batch_size: 4
     overfit: False
@@ -25,7 +25,7 @@ train:
 model:
     num_classes: 4
     pre-trained: False
-    lr: 0.01
+    lr: 0.001 # Changed from original 0.01
     loss:
         kl_div_anneal_epochs: 25
 
