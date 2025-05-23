@@ -83,35 +83,67 @@ def get_hough_labels(image: np.array, rho_old, theta_old, x_old, hor_line_propag
 
 
 def save_preds(sem, preds, unc, rgb, names):
-    results_dir = "./results/"
-    if not os.path.isdir(results_dir):
-        os.makedirs(results_dir)
+    results_dir = "./results/" # Base results directory
 
-    for b in range(preds.shape[0]):
-        network_pred = sem[b].squeeze().cpu()
-        corrected_pred = preds[b].squeeze().cpu()
-        current_rgb = rgb[b].squeeze().permute(1, 2, 0).cpu()
-        uncertainty = unc[b].squeeze().cpu()
+    # This top-level results_dir creation is good, but we also need subdirectories.
+    # os.makedirs(results_dir, exist_ok=True) # This line is fine, but not sufficient alone
 
-        fig, ax = plt.subplots(nrows=2, ncols=2)
+    for b in range(preds.shape[0]): # Assuming preds.shape[0] is the batch size
+        network_pred = sem[b].squeeze().cpu().numpy() # Convert to numpy for imshow if it's a tensor
+        corrected_pred = preds[b].squeeze().cpu().numpy() # Convert to numpy
+        current_rgb = rgb[b].squeeze().permute(1, 2, 0).cpu().numpy() # CHW to HWC, then numpy
+        uncertainty = unc[b].squeeze().cpu().numpy() # Convert to numpy
+
+        # Construct the full desired output path
+        # names[b] is like "000/first000_gt.png"
+        output_filename = os.path.join(results_dir, names[b])
+
+        # Extract the directory part of the output filename
+        # e.g., if output_filename is "./results/000/first000_gt.png",
+        # output_directory_for_file will be "./results/000"
+        output_directory_for_file = os.path.dirname(output_filename)
+
+        # Create the specific subdirectory if it doesn't exist
+        if not os.path.isdir(output_directory_for_file):
+            os.makedirs(output_directory_for_file, exist_ok=True) # exist_ok=True is important
+
+        fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(12,12)) # Increased figsize for better layout
+        
+        # Ensure RGB image is in the correct range for imshow (e.g., 0-1 for float, 0-255 for int)
+        if current_rgb.max() <= 1.0 and current_rgb.min() >=0.0 : # if normalized to [0,1]
+            pass # already good for imshow
+        elif current_rgb.max() > 1.0 : # if in [0,255] range
+            current_rgb = current_rgb / 255.0 
+        current_rgb = np.clip(current_rgb, 0, 1) # Clip to be safe
+
         ax[0, 0].imshow(current_rgb)
         ax[0, 0].set_title("RGB Image")
         ax[0, 0].set_xticks([])
         ax[0, 0].set_yticks([])
-        ax[0, 1].imshow(network_pred)
+
+        # For label maps, imshow usually handles 0,1,2,3 well with default colormap
+        # or you can specify a colormap: cmap='viridis' or a custom one.
+        # If imap2rgb was intended here, you'd use it.
+        # Assuming network_pred and corrected_pred are single-channel label maps (H,W)
+        ax[0, 1].imshow(network_pred) # Add cmap if needed, e.g., cmap=plt.cm.get_cmap('tab10', 4))
         ax[0, 1].set_title("Network Prediction")
         ax[0, 1].set_xticks([])
         ax[0, 1].set_yticks([])
-        ax[1, 0].imshow(uncertainty)
+
+        ax[1, 0].imshow(uncertainty) # Uncertainty might need a specific cmap, e.g., 'viridis' or 'magma'
         ax[1, 0].set_title("Uncertainty")
         ax[1, 0].set_xticks([])
         ax[1, 0].set_yticks([])
-        ax[1, 1].imshow(corrected_pred)
+
+        ax[1, 1].imshow(corrected_pred) # Add cmap if needed
         ax[1, 1].set_title("Post-Processed Prediction")
         ax[1, 1].set_xticks([])
         ax[1, 1].set_yticks([])
-        plt.savefig(os.path.join(results_dir, names[b]))
-        plt.close()
+        
+        plt.tight_layout() # Adjust subplot params for a tight layout.
+        print(f"Saving prediction visualization to: {output_filename}")
+        plt.savefig(output_filename)
+        plt.close(fig) # Close the figure after saving
 
 
 def save_images(name, map_rgb, img_rgb):

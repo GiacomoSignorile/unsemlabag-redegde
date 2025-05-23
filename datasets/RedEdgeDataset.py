@@ -6,6 +6,7 @@ import numpy as np
 from PIL import Image
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import Dataset, DataLoader
+import tifffile
 
 from utils.transforms import Transforms
 
@@ -184,39 +185,66 @@ class RedEdgeDataset(Dataset):
         entry = self.file_index[index]
         sample = {}
 
-        # --- Image Loading ---
         if self.image_sources_type == "composite":
             image_pil = Image.open(entry["image_sources_location"]).convert("RGB")
         elif self.image_sources_type == "bands":
             pil_images = []
-            # Load R, G, B in order if they are specified in band_channels_list and found
             for ch_key in ["R", "G", "B"]: 
-                if ch_key in entry["image_sources_location"]: # entry["image_sources_location"] is a dict here
+                if ch_key in entry["image_sources_location"]:
                     pil_images.append(Image.open(entry["image_sources_location"][ch_key]).convert("L"))
-            
             if len(pil_images) == 3:
                 resized_pil_channels = [img.resize(self.target_size, Image.BILINEAR) for img in pil_images]
                 image_np_list = [np.array(img) for img in resized_pil_channels]
                 image_np_stacked = np.stack(image_np_list, axis=-1)
                 image_pil = Image.fromarray(image_np_stacked)
-            elif len(pil_images) == 1: 
-                 image_pil = pil_images[0].convert("RGB")
-            elif pil_images: # Some bands found, but not 3 for RGB. Use first and convert.
-                image_pil = pil_images[0].convert("RGB")
-            else: # Should not happen if indexing logic is correct
-                raise ValueError(f"Could not load bands for {entry['name_id']}. Sources: {entry['image_sources_location']}")
-        else:
-            raise ValueError(f"Invalid image_sources_type in __getitem__: {self.image_sources_type}")
-
-
+            elif len(pil_images) == 1: image_pil = pil_images[0].convert("RGB")
+            elif pil_images: image_pil = pil_images[0].convert("RGB")
+            else: raise ValueError(f"Could not load bands for {entry['name_id']}. Sources: {entry['image_sources_location']}")
+        else: raise ValueError(f"Invalid image_sources_type in __getitem__: {self.image_sources_type}")
         image_resized_pil = image_pil.resize(self.target_size, Image.BILINEAR)
         sample["image"] = np.array(image_resized_pil).astype(np.uint8)
 
         # --- Semantic Label Processing ---
-        gt_pil = Image.open(entry["gt"]).convert("RGB")
-        gt_resized_pil = gt_pil.resize(self.target_size, Image.NEAREST)
-        gt_np_rgb = np.array(gt_resized_pil)
+        gt_path = entry["gt"]
+        gt_np_rgb = None
+
+        if gt_path.lower().endswith(('.tif', '.tiff')):
+            # Use tifffile for .tif images
+            tiff_img_data = tifffile.imread(gt_path)
+            # Assuming tiff_img_data is HWC or HW (if single channel but color-mapped by some viewers)
+            # We need to ensure it's a 3-channel RGB-like array for consistent processing
+            if tiff_img_data.ndim == 2: # Grayscale TIFF, try to make it RGB
+                # This assumption might be wrong if the TIF isn't meant to be color.
+                # If it's a label TIF already, this conversion is not what you want.
+                # However, the error was on .convert("RGB"), implying it was trying to treat it as color.
+                print(f"Warning: GT TIFF {gt_path} is 2D. Interpreting as grayscale and converting to RGB.")
+                gt_np_rgb = np.stack([tiff_img_data]*3, axis=-1)
+            elif tiff_img_data.ndim == 3 and tiff_img_data.shape[2] >= 3:
+                gt_np_rgb = tiff_img_data[:, :, :3] # Take first 3 channels (R,G,B)
+            else:
+                raise ValueError(f"Unsupported TIFF format for GT: {gt_path}, shape: {tiff_img_data.shape}")
+            
+            # Convert gt_np_rgb to PIL Image to use PIL's resize with NEAREST
+            # Ensure it's uint8 if not already
+            if gt_np_rgb.dtype != np.uint8:
+                 # Handle potential float tiffs - scale to 0-255 if they are in 0-1 or other ranges
+                if gt_np_rgb.max() <= 1.0 and gt_np_rgb.min() >= 0.0: # float 0-1
+                    gt_np_rgb = (gt_np_rgb * 255).astype(np.uint8)
+                elif gt_np_rgb.max() > 255: # e.g. 16-bit tiff
+                     gt_np_rgb = (gt_np_rgb / gt_np_rgb.max() * 255).astype(np.uint8) # simple scaling
+                else:
+                    gt_np_rgb = gt_np_rgb.astype(np.uint8)
+
+            gt_pil_from_tiff = Image.fromarray(gt_np_rgb.astype(np.uint8))
+            gt_resized_pil = gt_pil_from_tiff.resize(self.target_size, Image.NEAREST)
+            gt_np_rgb = np.array(gt_resized_pil)
+
+        else: # For .png, .jpg, etc.
+            gt_pil = Image.open(gt_path).convert("RGB")
+            gt_resized_pil = gt_pil.resize(self.target_size, Image.NEAREST)
+            gt_np_rgb = np.array(gt_resized_pil)
         
+        # Common processing for gt_np_rgb (now it's always a NumPy array from PIL or TIFF)
         height, width, _ = gt_np_rgb.shape
         semantics_map_hw = np.zeros((height, width), dtype=np.uint8)
         
