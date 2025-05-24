@@ -1,148 +1,183 @@
+# File: datasets/RedEdgeDataset.py
+
 import os
 import random
 import numpy as np
 from PIL import Image
-import tifffile # Ensure this is imported
+import tifffile
 from pytorch_lightning import LightningDataModule
-from torch.utils.data import Dataset, DataLoader
-from utils.transforms import Transforms
+from torch.utils.data import Dataset, DataLoader, random_split
+import torch
 
+from utils.transforms import Transforms
 
 class RedEdgeDataModule(LightningDataModule):
     def __init__(self, full_cfg):
         super().__init__()
+        print("===========================================")
+        print("--- RedEdgeDataModule __init__ (Loading from Existing Patches) ---")
         self.full_cfg = full_cfg
         data_cfg = self.full_cfg.get("data", {})
         if not data_cfg: raise ValueError("'data' section not found.")
-        self.root_dir = data_cfg.get("root_dir") # This will be "./samples/RedEdge_Patches_224"
+        print(f"  __init__: data_cfg content loaded: {data_cfg}")
+
+        self.root_dir = data_cfg.get("root_dir")
         if self.root_dir is None: raise KeyError("'root_dir' not found.")
 
-        self.train_fields = data_cfg.get("train_fields", [])
-        self.val_fields = data_cfg.get("val_fields", self.train_fields)
-        self.test_fields = data_cfg.get("test_fields", []) # Explicitly get test_fields
+        self.train_val_fields_config = data_cfg.get("train_val_fields", [])
+        self.test_fields_config = data_cfg.get("test_fields", [])
+        self.validation_split_ratio = data_cfg.get("validation_split_ratio", 0.2)
+        self.seed = self.full_cfg.get("experiment", {}).get("seed", 42)
 
-        # New params from config for patched data
-        self.patched_image_subfolder_template = data_cfg.get("patched_image_subfolder_template", "images/{composite_rgb_name}")
-        self.composite_rgb_name = data_cfg.get("composite_rgb_name", "RGB")
-        self.patched_gt_subfolder_parent = data_cfg.get("patched_gt_subfolder_parent", "semantics")
+        print(f"  __init__: Configured train_val_fields: {self.train_val_fields_config}")
+        print(f"  __init__: Configured test_fields     : {self.test_fields_config}")
+
+        # Parameters for finding the patches
+        self.image_patch_folder_config = data_cfg.get("image_patch_folder", "RGB")
+        self.gt_patch_folder_config = data_cfg.get("gt_patch_folder", "groundtruth")
         
         train_params_cfg = self.full_cfg.get("train", {})
-        self.batch_size = train_params_cfg.get("batch_size", data_cfg.get("batch_size", 4))
+        self.batch_size = train_params_cfg.get("batch_size", data_cfg.get("batch_size", 16)) # Defaulted to 16
         self.num_workers = train_params_cfg.get("workers", data_cfg.get("workers", 0))
         self.n_gpus = train_params_cfg.get("n_gpus", data_cfg.get("n_gpus", 1))
-        
+
         self.dataset_init_args = {
             "root_dir": self.root_dir,
-            "patched_image_subfolder_template": self.patched_image_subfolder_template,
-            "composite_rgb_name": self.composite_rgb_name,
-            "patched_gt_subfolder_parent": self.patched_gt_subfolder_parent,
-            "target_size": data_cfg.get("target_size", (224, 224)) # Should match patch size
+            "image_patch_folder": self.image_patch_folder_config,
+            "gt_patch_folder": self.gt_patch_folder_config,
+            "target_size": data_cfg.get("target_size", (512, 512)) # Should match actual patch size
         }
         self.train_dataset, self.val_dataset, self.test_dataset = None, None, None
+        self._has_setup_fit = False
+        self._has_setup_test = False
+        print("--- RedEdgeDataModule __init__ FINISHED ---")
+        print("===========================================")
 
-    def setup(self, stage=None):
+    def setup(self, stage: str = None):
+        print("===========================================")
+        print(f"--- RedEdgeDataModule setup(stage='{stage}') (Loading Existing Patches) ---")
+        # ... (setup logic with random_split from your last working version) ...
         if stage == "fit" or stage is None:
-            if self.train_fields:
-                self.train_dataset = RedEdgeDataset(fields=self.train_fields, **self.dataset_init_args)
-            if self.val_fields:
-                self.val_dataset = RedEdgeDataset(fields=self.val_fields, **self.dataset_init_args) # No is_train for Unsemlabag Transforms
+            if not self._has_setup_fit:
+                if self.train_val_fields_config:
+                    print(f"  SETUP FIT: Initializing FULL dataset for splitting with fields: {self.train_val_fields_config}")
+                    full_dataset_for_split = RedEdgeDataset(fields=self.train_val_fields_config, **self.dataset_init_args)
+                    if len(full_dataset_for_split) > 0:
+                        num_samples = len(full_dataset_for_split)
+                        val_size = int(self.validation_split_ratio * num_samples)
+                        if val_size == 0 and num_samples > 1 : val_size = 1 
+                        if val_size >= num_samples and num_samples > 0 : val_size = num_samples -1 
+                        train_size = num_samples - val_size
+                        if train_size > 0 and val_size > 0:
+                            print(f"  SETUP FIT: Splitting {num_samples} samples into train_size={train_size}, val_size={val_size}")
+                            self.train_dataset, self.val_dataset = random_split(
+                                full_dataset_for_split, [train_size, val_size],
+                                generator=torch.Generator().manual_seed(self.seed)
+                            )
+                            print(f"  SETUP FIT: train_dataset INITIALIZED with {len(self.train_dataset)} items (from split).")
+                            print(f"  SETUP FIT: val_dataset INITIALIZED with {len(self.val_dataset)} items (from split).")
+                        elif train_size > 0:
+                            print(f"  SETUP FIT: Using all {num_samples} samples for training.")
+                            self.train_dataset = full_dataset_for_split; self.val_dataset = None
+                        else:
+                            print(f"  SETUP FIT: Not enough data to split."); self.train_dataset = None; self.val_dataset = None
+                    else: print("  SETUP FIT: full_dataset_for_split IS EMPTY."); self.train_dataset = None; self.val_dataset = None
+                else: print("  SETUP FIT: self.train_val_fields_config IS EMPTY."); self.train_dataset = None; self.val_dataset = None
+                self._has_setup_fit = True
+            else: print(f"  SETUP FIT: Already called for stage 'fit'. Skipping.")
+
         if stage == "test" or stage is None:
-            if self.test_fields:
-                 self.test_dataset = RedEdgeDataset(fields=self.test_fields, **self.dataset_init_args)
-    
-    # Dataloaders remain the same
-    def train_dataloader(self):
-        if not self.train_dataset: self.setup(stage="fit")
-        if not self.train_dataset: print("Warning: Train dataloader - train_dataset not available."); return None
+            if not self._has_setup_test:
+                if self.test_fields_config:
+                    print(f"  SETUP TEST: Initializing test_dataset with fields: {self.test_fields_config}")
+                    self.test_dataset = RedEdgeDataset(fields=self.test_fields_config, **self.dataset_init_args)
+                    print(f"  SETUP TEST: test_dataset items: {len(self.test_dataset) if self.test_dataset else 'None or 0'}")
+                else: print("  SETUP TEST: self.test_fields_config IS EMPTY."); self.test_dataset = None
+                self._has_setup_test = True
+            else: print(f"  SETUP TEST: Already called for stage 'test'. Skipping.")
+        print(f"--- RedEdgeDataModule setup(stage='{stage}') FINISHED ---")
+        print(f"  After setup: train_dataset len: {len(self.train_dataset) if self.train_dataset else 'None'}")
+        print(f"  After setup: val_dataset len: {len(self.val_dataset) if self.val_dataset else 'None'}")
+        print("===========================================")
+        
+    def train_dataloader(self): 
+        print("===========================================")
+        print("--- RedEdgeDataModule train_dataloader() CALLED ---")
+        if not self.train_dataset or len(self.train_dataset) == 0:
+            print("  ERROR in train_dataloader: self.train_dataset is None or empty. " \
+                  "This indicates an issue in the setup phase or config. Returning None.")
+            return None
         return DataLoader(self.train_dataset, batch_size=self.batch_size // self.n_gpus if self.n_gpus > 0 else self.batch_size, num_workers=self.num_workers, pin_memory=True, shuffle=True)
+
     def val_dataloader(self):
-        if not self.val_dataset: self.setup(stage="fit")
-        if not self.val_dataset: print("Warning: Val dataloader - val_dataset not available."); return None
+        print("===========================================")
+        print("--- RedEdgeDataModule val_dataloader() CALLED ---")
+        if not self.val_dataset or len(self.val_dataset) == 0:
+            print("  WARN in val_dataloader: self.val_dataset is None or empty. Returning None.")
+            return None
         return DataLoader(self.val_dataset, batch_size=self.batch_size // self.n_gpus if self.n_gpus > 0 else self.batch_size, num_workers=self.num_workers, pin_memory=True, shuffle=False)
-    def test_dataloader(self):
-        if not self.test_dataset: self.setup(stage="test")
-        if not self.test_dataset: print("Warning: Test dataloader - test_dataset not available."); return None
+
+    def test_dataloader(self): 
+        print("===========================================")
+        print("--- RedEdgeDataModule test_dataloader() CALLED ---")
+        if not self.test_dataset or len(self.test_dataset) == 0:
+            print("  ERROR in test_dataloader: self.test_dataset is None or empty. Returning None.")
+            return None
         return DataLoader(self.test_dataset, batch_size=self.batch_size // self.n_gpus if self.n_gpus > 0 else self.batch_size, num_workers=self.num_workers, pin_memory=True, shuffle=False)
 
 
 class RedEdgeDataset(Dataset):
     def __init__(self, root_dir, fields, 
-                 patched_image_subfolder_template, composite_rgb_name, 
-                 patched_gt_subfolder_parent, 
-                 target_size=(224,224)): # target_size is now mainly for reference
+                 image_patch_folder, gt_patch_folder, 
+                 target_size=(512,512)):
         super().__init__()
         self.root_dir = root_dir
         self.fields = fields
-        self.patched_image_subfolder = patched_image_subfolder_template.format(composite_rgb_name=composite_rgb_name)
-        self.patched_gt_subfolder_parent = patched_gt_subfolder_parent
-        self.target_size = target_size # Patches should already be this size
+        self.image_patch_folder_name = image_patch_folder
+        self.gt_patch_folder_name = gt_patch_folder     
+        self.target_size = target_size 
         self.transform = Transforms()
 
         self.file_index = []
-        print(f"--- Initializing RedEdgeDataset (Patched) ---")
-        print(f"Root dir: {os.path.abspath(root_dir)}")
-        print(f"Fields to load patches from: {fields}")
-        print(f"Image patches expected in: ...field_id/{self.patched_image_subfolder}/<patch_name>.png")
-        print(f"GT patches expected in:    ...field_id/{self.patched_gt_subfolder_parent}/<original_gt_basename>/<patch_name>.png")
+        print(f"--- Initializing RedEdgeDataset (Loading Existing Patches) for fields: {fields} ---")
+        print(f"  Root dir: {os.path.abspath(root_dir)}")
+        print(f"  Image patches expected in: ...field_id/{self.image_patch_folder_name}/<patch_filename>.png")
+        print(f"  GT patches expected in:    ...field_id/{self.gt_patch_folder_name}/<patch_filename>.png")
 
         for field_id in self.fields:
-            print(f"Processing field for patches: {field_id}")
+            print(f"  Processing field for existing patches: {field_id}")
             
-            current_image_patch_dir = os.path.join(self.root_dir, field_id, self.patched_image_subfolder)
-            current_gt_patch_parent_dir = os.path.join(self.root_dir, field_id, self.patched_gt_subfolder_parent)
+            current_image_patch_dir = os.path.join(self.root_dir, field_id, self.image_patch_folder_name)
+            current_gt_patch_dir = os.path.join(self.root_dir, field_id, self.gt_patch_folder_name)
 
             if not os.path.isdir(current_image_patch_dir):
-                print(f"  WARNING: Image patch directory not found: {current_image_patch_dir}")
+                print(f"    WARNING: Image patch directory not found: {current_image_patch_dir}")
                 continue
-            if not os.path.isdir(current_gt_patch_parent_dir):
-                print(f"  WARNING: GT patch parent directory not found: {current_gt_patch_parent_dir}")
-                continue
-
-            # Find subfolders in GT patch parent dir (these are named after original GT files)
-            # e.g., 'first000_gt', 'another_gt_basename'
-            gt_patch_subfolders = [d for d in os.listdir(current_gt_patch_parent_dir) if os.path.isdir(os.path.join(current_gt_patch_parent_dir, d))]
-            if not gt_patch_subfolders:
-                print(f"  WARNING: No GT patch subfolders found in {current_gt_patch_parent_dir}")
+            if not os.path.isdir(current_gt_patch_dir):
+                print(f"    WARNING: GT patch directory not found: {current_gt_patch_dir}")
                 continue
             
-            # For simplicity, assume we use all GTs if multiple, or just one if it's always one-to-one
-            # With current run_preprocessing.py, there's one GT subfolder per original GT file.
-            # If an RGB.png corresponds to ONE first000_gt.png, then we just need to find its patch folder.
-            # Let's assume the first GT subfolder found is the one corresponding to the images in patched_image_subfolder
-            # This assumption holds if your run_preprocessing.py creates RGB/ and first000_gt/ (for example)
-            
-            # A more robust way: if you know the original GT filename associated with the RGB patches
-            # For now, let's try to be a bit more general if there's only one GT subfolder.
-            # If there are multiple, this logic might need to be smarter or the run_preprocessing.py
-            # should ensure a clear mapping.
-            
-            # Let's iterate through image patches and try to find a corresponding GT patch
-            for image_patch_filename in os.listdir(current_image_patch_dir):
-                if not image_patch_filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+            for patch_filename in os.listdir(current_image_patch_dir):
+                if not patch_filename.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff')): 
                     continue
 
-                image_patch_full_path = os.path.join(current_image_patch_dir, image_patch_filename)
-                found_corresponding_gt = False
+                image_patch_full_path = os.path.join(current_image_patch_dir, patch_filename)
                 
-                for gt_subfolder_name in gt_patch_subfolders: # e.g., "first000_gt"
-                    gt_patch_full_path = os.path.join(current_gt_patch_parent_dir, gt_subfolder_name, image_patch_filename) # Use same patch filename
-                    
-                    if os.path.exists(gt_patch_full_path):
-                        self.file_index.append({
-                            "image_patch_path": image_patch_full_path,
-                            "gt_patch_path": gt_patch_full_path,
-                            "name_id": f"{field_id}/patch_{image_patch_filename}"
-                        })
-                        found_corresponding_gt = True
-                        break # Found corresponding GT patch for this image patch
+                gt_patch_full_path = os.path.join(current_gt_patch_dir, patch_filename) 
                 
-                if not found_corresponding_gt:
-                    print(f"  WARNING: No corresponding GT patch found for image patch: {image_patch_full_path} in any of {gt_patch_subfolders}")
+                if os.path.exists(gt_patch_full_path):
+                    self.file_index.append({
+                        "image_patch_path": image_patch_full_path,
+                        "gt_patch_path": gt_patch_full_path,
+                        "name_id": f"{field_id}/patch_{patch_filename}"
+                    })
+                else:
+                    print(f"    WARNING: No corresponding GT patch found at '{gt_patch_full_path}' for image patch: {image_patch_full_path}")
         
         if not self.file_index:
-            print(f"FINAL WARNING (Patched): No patch pairs were added to the index.")
+            print(f"FINAL WARNING (Existing Patches): No patch pairs were found for fields {fields}.")
         else:
-            print(f"--- RedEdgeDataset (Patched) Initialized. Found {len(self.file_index)} patch pairs. ---")
+            print(f"--- RedEdgeDataset (Existing Patches) Initialized for fields {fields}. Found {len(self.file_index)} patch pairs. ---")
 
     def __len__(self):
         return len(self.file_index)
@@ -151,33 +186,43 @@ class RedEdgeDataset(Dataset):
         entry = self.file_index[index]
         sample = {}
 
-        # Load image patch (should already be target_size and RGB)
-        image_pil = Image.open(entry["image_patch_path"]).convert("RGB")
-        # Patches are already 224x224, so resize might be redundant but harmless if target_size is also 224x224
-        if image_pil.size != self.target_size:
-            image_pil = image_pil.resize(self.target_size, Image.BILINEAR)
-        sample["image"] = np.array(image_pil).astype(np.uint8) # For Unsemlabag's Transforms
+        # Load image patch
+        image_path = entry["image_patch_path"]
+        if image_path.lower().endswith(('.tif', '.tiff')):
+            img_data_np = tifffile.imread(image_path)
+            if img_data_np.ndim == 2: img_data_np = np.stack([img_data_np]*3, axis=-1) # Ensure 3 channels for RGB
+            elif img_data_np.ndim == 3 and img_data_np.shape[2] > 3: img_data_np = img_data_np[:,:,:3] # Take first 3 if more
+            if img_data_np.dtype != np.uint8:
+                if img_data_np.max() <= 1.0 : img_data_np = (img_data_np * 255)
+                elif img_data_np.max() > 255: img_data_np = (img_data_np / img_data_np.max() * 255)
+                img_data_np = img_data_np.astype(np.uint8)
+            image_pil = Image.fromarray(img_data_np)
+        else:
+            image_pil = Image.open(image_path).convert("RGB")
 
-        # Load GT patch
+        if image_pil.size != self.target_size:
+            print(f"Resizing image patch {entry['name_id']} from {image_pil.size} to {self.target_size}")
+            image_pil = image_pil.resize(self.target_size, Image.BILINEAR)
+        sample["image"] = np.array(image_pil).astype(np.uint8)
+
+        # Load GT patch (logic remains same as before)
         gt_patch_path = entry["gt_patch_path"]
         gt_np_rgb = None
         if gt_patch_path.lower().endswith(('.tif', '.tiff')):
             tiff_img_data = tifffile.imread(gt_patch_path)
             if tiff_img_data.ndim == 2: gt_np_rgb = np.stack([tiff_img_data]*3, axis=-1)
             elif tiff_img_data.ndim == 3 and tiff_img_data.shape[2] >= 3: gt_np_rgb = tiff_img_data[:, :, :3]
-            else: raise ValueError(f"Unsupported TIFF GT patch: {gt_patch_path}")
-            if gt_np_rgb.dtype != np.uint8: # Scale if necessary
-                if gt_np_rgb.max() <= 1.0 and gt_np_rgb.min() >= 0.0: gt_np_rgb = (gt_np_rgb * 255)
+            else: raise ValueError(f"Unsupported TIFF GT patch: {gt_patch_path}, shape: {tiff_img_data.shape}")
+            if gt_np_rgb.dtype != np.uint8:
+                if gt_np_rgb.max() <= 1.0: gt_np_rgb = (gt_np_rgb * 255)
                 elif gt_np_rgb.max() > 255 : gt_np_rgb = (gt_np_rgb / gt_np_rgb.max() * 255)
                 gt_np_rgb = gt_np_rgb.astype(np.uint8)
-            gt_pil_from_tiff = Image.fromarray(gt_np_rgb) # Now HWC uint8
-            if gt_pil_from_tiff.size != self.target_size: # Resize if patch wasn't exact (should be)
-                 gt_pil_from_tiff = gt_pil_from_tiff.resize(self.target_size, Image.NEAREST)
+            gt_pil_from_tiff = Image.fromarray(gt_np_rgb)
+            if gt_pil_from_tiff.size != self.target_size: gt_pil_from_tiff = gt_pil_from_tiff.resize(self.target_size, Image.NEAREST)
             gt_np_rgb = np.array(gt_pil_from_tiff)
         else:
             gt_pil = Image.open(gt_patch_path).convert("RGB")
-            if gt_pil.size != self.target_size: # Resize if patch wasn't exact
-                gt_pil = gt_pil.resize(self.target_size, Image.NEAREST)
+            if gt_pil.size != self.target_size: gt_pil = gt_pil.resize(self.target_size, Image.NEAREST)
             gt_np_rgb = np.array(gt_pil)
         
         height, width, _ = gt_np_rgb.shape

@@ -3,22 +3,27 @@ experiment:
     seed: 6492
 
 data:
-  name: "RedEdge"  # <--- CHANGE THIS to match the new dataset name
-  root_dir: "./samples/RedEdge_Patches_224/"
-  train_fields: ["001", "002", "003","004"] # For training
-  val_fields: ["000"]                        # For validation
-  test_fields: ["000"]                       # For testing (optional, if you implement test_dataloader fully)
-  band_channels_list: ["R", "G", "B"] 
-  gt_folder_name: "groundtruth"
-  #target_size: [1024, 1024] # Add this if you want to configure resize target
+  name: "RedEdge"
+  root_dir: "./samples/512"  # Points to your folder containing 000, 001, etc.
+  
+  train_val_fields: ["001", "002", "003", "004"] # Fields to draw patches from for train/val
+  test_fields: ["000"]                       # Field to draw patches from for test
 
+  # How to find the image and GT patches within each field_id folder:
+  image_patch_folder: "RGB"      # Subfolder under field_id containing RGB patch files (e.g., 62.png)
+  gt_patch_folder: "groundtruth" # Subfolder under field_id containing GT patch files (e.g., 62.png)
+  # We will assume image patch name matches GT patch name (e.g., "62.png")
+
+  target_size: [512, 512] # This should match the actual size of your patches in ./samples/512/
+                          # If patches are 224x224, set this to [224, 224]
+  validation_split_ratio: 0.2 
 
 ##Training
 train:
     n_gpus: 1
     workers: 0 # Number of workers for data loading for my cpu i7
     max_epoch: 100
-    batch_size: 4
+    batch_size: 8
     overfit: False
 
 ##Network
