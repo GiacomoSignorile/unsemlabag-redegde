@@ -178,3 +178,4 @@ samples/
 *.ckpt
 *:Zone.Identifier
 experiments/
+results/
