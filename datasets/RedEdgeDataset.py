@@ -201,7 +201,7 @@ class RedEdgeDataset(Dataset):
             image_pil = Image.open(image_path).convert("RGB")
 
         if image_pil.size != self.target_size:
-            print(f"Resizing image patch {entry['name_id']} from {image_pil.size} to {self.target_size}")
+            #print(f"Resizing image patch {entry['name_id']} from {image_pil.size} to {self.target_size}")
             image_pil = image_pil.resize(self.target_size, Image.BILINEAR)
         sample["image"] = np.array(image_pil).astype(np.uint8)
 

@@ -4,7 +4,7 @@ from PIL import Image
 
 
 class Hough:
-    def __init__(self, pixel_res=1, angle_res=np.pi / 180, min_theta=-0.02, max_theta=0.02, min_voting=800):
+    def __init__(self, pixel_res=1, angle_res=np.pi / 180, min_theta= np.pi / 2 - 0.02, max_theta= np.pi / 2 + 0.02, min_voting=600):
         self.pixel_res = pixel_res
         self.angle_res = angle_res
         self.min_theta = min_theta
@@ -49,7 +49,7 @@ class Hough:
         cv2.line(line_mask, (x1, y1), (x2, y2), (255, 255, 255), 15)
 
         # include lines propagated from the y axis
-        line_mask = self.propagate_vertical_rows(line_mask, x1, x_old, rho_old, theta_old)
+        line_mask = self.propagate_horizontal_rows(line_mask, x1, x_old, rho_old, theta_old)
 
         # include lines propagated from the x axis
         line_mask = cv2.line(
@@ -95,7 +95,7 @@ class Hough:
                 label_mask[(veg_components[1] == _id)] = 1
 
         label_mask[(line_soil == 255)] = 0  # soil
-        label_mask, horizontal_dict = self.check_horizontal(label_mask)
+        label_mask, horizontal_dict = self.check_vertical(label_mask)
         return label_mask, horizontal_dict
 
     def check_horizontal(self, mask):
@@ -103,6 +103,17 @@ class Hough:
             "start": mask[-int(mask.shape[0] / 2), :].argmax(),
             "end": np.flip(mask[-int(mask.shape[0] / 2), :]).argmax(),
             "size": mask[-int(mask.shape[0] / 2), :].sum(),
+        }
+
+    def check_vertical(self, mask):
+        # For horizontal rows, we check a vertical slice through the middle
+        middle_col = int(mask.shape[1] / 2)  # Middle column instead of middle row
+        vertical_slice = mask[:, middle_col]  # Vertical slice instead of horizontal
+        
+        return mask, {
+            "start": vertical_slice.argmax(),  # First non-zero element from top
+            "end": np.flip(vertical_slice).argmax(),  # First non-zero element from bottom (flipped)
+            "size": vertical_slice.sum(),  # Total sum of vertical slice
         }
 
     def weakly_supervised_mask(self, name):
@@ -135,3 +146,27 @@ class Hough:
 
         self.binary_mask[self.binary_mask != 0] = 1
         self.binary_mask = self.binary_mask.astype(np.uint8)
+
+    def propagate_horizontal_rows(self, line_mask, y1, y_old, rho_old, theta_old):
+        if y_old != []:
+            for it in range(len(y_old)):
+                # Skip if no previous line detected or lines are too close
+                if y_old[it] == -1 or abs(y_old[it] - y1) < 200:
+                    continue
+                
+                # Calculate new x-coordinate for the propagated horizontal line
+                # For horizontal lines: x = (rho - y * sin(theta)) / cos(theta)
+                y_new = int(
+                    (rho_old[it] - line_mask.shape[1] * (it + 2) * np.cos(theta_old)) / np.sin(theta_old)
+                    + (150 + (len(y_old) - it) * 25)
+                )
+                
+                # Draw horizontal line from left to right edge of image
+                line_mask = cv2.line(
+                    line_mask,
+                    (0, y_old[it] + (150 + (len(y_old) - it) * 25)),  # Start point (left edge)
+                    (line_mask.shape[1], y_new),  # End point (right edge)
+                    (255, 255, 255),
+                    15,
+                )
+        return line_mask

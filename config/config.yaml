@@ -4,10 +4,9 @@ experiment:
 
 data:
   name: "RedEdge"
-  root_dir: "./samples/512"  # Points to your folder containing 000, 001, etc.
-  
-  train_val_fields: ["001", "002", "003", "004"] # Fields to draw patches from for train/val
-  test_fields: ["000"]                       # Field to draw patches from for test
+  root_dir: "./samples/rotated_ortho2"  # Points to your folder containing 000, 001, etc.
+  maps:  "./samples/rotated_ortho/001/RGB.png"
+  map_out_name: "./results/field_001_hor2_RGB_generated_label.png"               # Field to draw patches from for test
 
   # How to find the image and GT patches within each field_id folder:
   image_patch_folder: "RGB"      # Subfolder under field_id containing RGB patch files (e.g., 62.png)
@@ -38,14 +37,22 @@ simulator:
     path_to_orthomosaic: None
     resize_flag: false
     resize_factor: 1 # ratio to original tile
-    gsd: 0.001 # original tile has 11664 x 8750 with 0.001 meter/pixel gsd
-    world_range: [2266, 8750] # [w, h] pixel
+    gsd: 0.001 # orginal tile has 11664 x 8750 with 0.001 meter/pixel gsd
+    world_range: [6846, 2802] # field 0 [w, h] pixel
+    #world_range: [6646, 2282] # field 1 [w, h] pixel
+    #world_range: [6945, 3699] # field 2 [w, h] pixel
+    #world_range: [6835, 2310] # field 3 [w, h] pixel
+    #world_range: [5220, 3172] # field 4 [w, h] pixel
     sensor:
-        resolution: [1024, 1024] # [w, h] pixel
+        resolution: [512, 512] # [w, h] pixel
         angle: [45, 45] # [w, h] degree
 
 mapper:
-  poses: [3, 8]
-  map_boundary: [2266, 8750] # [w, h] pixel
+  poses: [12, 2]
+  map_boundary: [6846, 2802] # field 0 [w, h] pixel
+  #map_boundary: [6646, 2282] # field 1 [w, h] pixel
+  #map_boundary: [6945, 3699] # field 2 [w, h] pixel
+  #map_boundary: [6835, 2310] # field 3 [w, h] pixel
+  #map_boundary: [5220, 3172] # field 4 [w, h] pixel
   ground_resolution: [0.001, 0.001] # [0.001, 0.001]
   class_number: 4

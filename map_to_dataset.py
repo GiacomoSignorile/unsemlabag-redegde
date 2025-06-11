@@ -16,6 +16,7 @@ def main(export, config, dpi):
     # get paths to map and labels
     path_to_map = cfg["data"]["maps"]
     path_to_annos = cfg["data"]["map_out_name"]
+
     if not os.path.exists(path_to_annos):
         raise ValueError("There is no annotated map, we cannot produce the dataset.")
     # if export does not exists, we create it
@@ -24,11 +25,13 @@ def main(export, config, dpi):
     # we then access or create the folders for images and semantics
     export_img = os.path.join(export, "images")
     export_sem = os.path.join(export, "semantics")
+
     # if they do not exist, we create them
     if not os.path.isdir(export_img):
         os.mkdir(export_img)
     if not os.path.isdir(export_sem):
         os.mkdir(export_sem)
+
     # get size of maps, poses, size for saving the image given dpi
     map_boundary = cfg["mapper"]["map_boundary"]
     poses = cfg["mapper"]["poses"]
@@ -39,7 +42,8 @@ def main(export, config, dpi):
     # list of maps
     current_map = np.array(Image.open(path_to_map))
     current_annos = np.array(Image.open(path_to_annos))
-
+    print(f"Map shape: {current_map.shape}, Annotations shape: {current_annos.shape}")
+    print(f"Map boundary: {map_boundary}, Poses: {poses}, Size: {size}, Size in inches: {size_inches}")
     for row in range(poses[1]):
         idx = row * size[1]
         if idx + size[1] > map_boundary[1]:
@@ -69,6 +73,7 @@ def main(export, config, dpi):
             plt.savefig(os.path.join(export_sem, str(counter) + ".png"), dpi=dpi)
             plt.close()
             counter += 1
+    print(f"Exported {counter} images to {export_img} and {export_sem}")
 
 
 if __name__ == "__main__":

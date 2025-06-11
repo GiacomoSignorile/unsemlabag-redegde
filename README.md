@@ -113,3 +113,9 @@ black -l 120 path/to/python/module/or/package/
 
 To optimize and clean up your imports, feel free to have a look at this solution for [PyCharm](https://www.jetbrains.com/pycharm/guide/tips/optimize-imports/).
 
+
+make train CONFIG="config/config000.yaml" && 
+make train CONFIG="config/config001.yaml" &&
+make train CONFIG="config/config002.yaml" &&
+make train CONFIG="config/config003.yaml" &&
+make train CONFIG="config/config004.yaml"
