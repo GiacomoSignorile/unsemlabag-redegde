@@ -31,6 +31,7 @@ class OrthoSimulator(Simulator):
             (np.linalg.norm(fov_corner[3] - fov_corner[0])) / self.sensor.resolution[1],
         ]
         rgb_image_raw = self.world[range_list[2] : range_list[3], range_list[0] : range_list[1], :]
+        print(f"Range: {range_list}, GSD: {gsd}")
         rgb_image = cv2.resize(rgb_image_raw, tuple(self.sensor.resolution))
 
         return {
