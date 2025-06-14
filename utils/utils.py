@@ -74,12 +74,40 @@ def get_fov(pose: np.array, sensor_angle: List, gsd: float, world_range: List):
 def get_hough_labels(image: np.array, rho_old, theta_old, x_old, hor_line_propag, one_hot_encoded: bool = False):
     hough = Hough()
     with torch.no_grad():
-        labels, horizontal_exc, rho, theta, x, lines = hough.forward(image, rho_old, theta_old, x_old, hor_line_propag)
+        line_results = hough.forward(image, rho_old, theta_old, x_old, hor_line_propag)
+    
+    print("DEBUG: Raw line results:")
+    for idx, res in enumerate(line_results):
+        print(f"  Result {idx}: rho={res[2]}, theta={res[3]}, x={res[4]}")
+    
+    # Initialize lists to store results for each detected line
+    all_labels = []
+    all_horizontal_exc = []
+    all_rho = []
+    all_theta = []
+    all_x = []
+    all_lines = []
+    
+    # Process each line's result
+    for result in line_results:
+        labels, horizontal_exc, rho, theta, x, line_mask = result
+       
+        if one_hot_encoded:
+            labels = torch.nn.functional.one_hot(torch.tensor(labels).long(), num_classes=4) \
+                      .movedim(-1, 0).float()
+        all_labels.append(labels.cpu().numpy())
+        all_horizontal_exc.append(horizontal_exc)
+        all_rho.append(rho)
+        all_theta.append(theta)
+        all_x.append(x)
+        all_lines.append(line_mask)
 
-    if one_hot_encoded:
-        labels = torch.nn.functional.one_hot(torch.tensor(labels).long(), num_classes=4).movedim(-1, 0).float()
-
-    return labels.cpu().numpy(), rho, theta, x, horizontal_exc, lines
+    print("DEBUG: Final output from get_hough_labels:")
+    print("  Number of labels:", len(all_labels))
+    print("  Rho values:", all_rho)
+    print("  Theta values:", all_theta)
+    
+    return all_labels, all_rho, all_theta, all_x, all_horizontal_exc, all_lines
 
 
 def save_preds(sem, preds, unc, rgb, names):
