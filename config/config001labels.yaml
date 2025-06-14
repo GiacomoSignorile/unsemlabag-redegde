@@ -1,0 +1,66 @@
+experiment:
+    id: experiment_001
+    seed: 6492
+
+data:
+  name: "RedEdge"
+  root_dir: "./samples/512"
+  maps: "./samples/rotated_ortho/001/RGB.png"
+  map_out_name: "./results/field_001_generated_label.png"
+  train_val_fields: ["000", "002", "003", "004"] # Fields to draw patches from for train/val
+  test_fields: ["001"]  
+  image_patch_folder: "RGB"
+  gt_patch_folder: "groundtruth"
+  target_size: [512, 512]
+  validation_split_ratio: 0.2
+
+train:
+    n_gpus: 1
+    workers: 0
+    max_epoch: 100
+    batch_size: 8
+    overfit: False
+
+model:
+    num_classes: 4
+    pre-trained: False
+    lr: 0.01
+    loss:
+        kl_div_anneal_epochs: 25
+
+simulator:
+    path_to_orthomosaic: None
+    resize_flag: false
+    resize_factor: 1
+    gsd: 0.003
+    world_range: [6646, 2282]
+    sensor:
+        resolution: [1024, 1024]
+        angle: [45, 45]
+
+mapper:
+  poses: [37, 6]
+  map_boundary: [6646, 2282]
+  ground_resolution: [0.003, 0.003]
+  class_number: 4
+
+hough_params:
+  # Plant Detection
+  green_channel_idx: 1 # 0=R, 1=G, 2=B
+  red_channel_idx: 0
+  blue_channel_idx: 2
+  plant_threshold_value: 50
+  green_over_red_factor: 1.1
+  green_over_blue_factor: 1.1
+  # Canny Edge Detection
+  canny_low_threshold: 50
+  canny_high_threshold: 150
+  # Hough Transform
+  hough_rho_resolution: 1
+  hough_theta_resolution_degrees: 1
+  hough_accumulator_threshold: 40
+  hough_min_line_length_pixels: 50
+  hough_max_line_gap_pixels: 10
+  # Line Clustering
+  angle_clustering_eps_degrees: 2.0
+  min_lines_in_cluster: 3
