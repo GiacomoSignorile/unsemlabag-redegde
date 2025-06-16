@@ -5,12 +5,20 @@ import click
 import numpy as np
 import yaml
 from PIL import Image
+import cv2
 
 from mapper.terrain_mapper import TerrainMapper
 from simulator.load_simulators import get_simulator
 from utils.label_generation import generate_poses, generate_single_pose_label
 from utils.utils import imap2rgb, save_images
 
+# Check current number of threads
+print(f"OpenCV is using {cv2.getNumThreads()} threads.")
+
+# Set the number of threads to the number of available cores
+# This is the most common and effective setting
+cv2.setNumThreads(cv2.getNumberOfCPUs()) 
+print(f"OpenCV is now set to use {cv2.getNumThreads()} threads.")
 
 def read_config_files(config_file_path: str) -> Dict:
     if not os.path.isfile(config_file_path):

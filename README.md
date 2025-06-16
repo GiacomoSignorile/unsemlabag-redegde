@@ -119,6 +119,12 @@ make generate CONFIG="config/config002labels.yaml" &&
 make generate CONFIG="config/config003labels.yaml" &&
 make generate CONFIG="config/config004labels.yaml"
 
+make map_to_images DATA_PATH="results/000"  CONFIG="config/config000.yaml" &&
+make map_to_images DATA_PATH="results/001"  CONFIG="config/config001.yaml" &&
+make map_to_images DATA_PATH="results/002"  CONFIG="config/config002.yaml" &&
+make map_to_images DATA_PATH="results/003"  CONFIG="config/config003.yaml" &&
+make map_to_images DATA_PATH="results/004"  CONFIG="config/config004.yaml"
+
 make train CONFIG="config/config000.yaml" && 
 make train CONFIG="config/config001.yaml" &&
 make train CONFIG="config/config002.yaml" &&

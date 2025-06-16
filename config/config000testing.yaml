@@ -4,13 +4,13 @@ experiment:
 
 data:
   name: "RedEdge"
-  root_dir: "./results"
+  root_dir: "./samples/512"
   maps: "./samples/rotated_ortho/000/RGB.png"
   map_out_name: "./results/field_000_generated_label.png"
   train_val_fields: ["001", "002", "003", "004"] # Fields to draw patches from for train/val
   test_fields: ["000"]  
-  image_patch_folder: "images"
-  gt_patch_folder: "semantics"
+  image_patch_folder: "RGB"
+  gt_patch_folder: "groundtruth"
   target_size: [512, 512]
   validation_split_ratio: 0.2
 
@@ -35,7 +35,7 @@ simulator:
     gsd: 0.003
     world_range: [6846, 2802]
     sensor:
-        resolution: [512, 512]
+        resolution: [1024, 1024]
         angle: [45, 45]
 
 mapper:

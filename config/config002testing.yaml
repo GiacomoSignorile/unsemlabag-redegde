@@ -1,16 +1,17 @@
 experiment:
-    id: experiment_003
+    id: experiment_002
     seed: 6492
 
 data:
   name: "RedEdge"
-  root_dir: "./samples/512"
-  maps: "./samples/rotated_ortho/003/RGB.png"
-  map_out_name: "./results/field_003_generated_label_min_voting400.png"
-  train_val_fields: ["001", "000", "002", "004"] # Fields to draw patches from for train/val
-  test_fields: ["003"] 
-  image_patch_folder: "RGB"
-  gt_patch_folder: "groundtruth"
+  root_dir: "./results"
+  maps: "./samples/rotated_ortho/002/RGB.png"
+  map_out_name: "./results/field_002_generated_label.png"
+  train_val_fields: ["001", "000", "003", "004"] # Fields to draw patches from for train/val
+  test_fields: ["002"]  
+
+  image_patch_folder: "images"
+  gt_patch_folder: "semantics"
   target_size: [512, 512]
   validation_split_ratio: 0.2
 
@@ -33,13 +34,13 @@ simulator:
     resize_flag: false
     resize_factor: 1
     gsd: 0.003
-    world_range: [6835, 2310]
+    world_range: [6945, 3699]
     sensor:
-        resolution: [1024, 1024]
+        resolution: [512, 512]
         angle: [45, 45]
 
 mapper:
-  poses: [38, 6]
-  map_boundary: [6835, 2310]
+  poses: [39, 10]
+  map_boundary: [6945, 3699]
   ground_resolution: [0.003, 0.003]
   class_number: 4
