@@ -30,84 +30,68 @@ make build
 
 ### Download the WeedMap Dataset
 
-This project uses the RedEdge subset of the WeedMap dataset.
+This project is configured to work with the RedEdge subset of the WeedMap dataset.
 
-```bash
-# This command will download and unzip the RedEdge data into a `dataset/` directory.
-make download_weedmap
-```
+ you can manually download the [RedEdge data](http://robotics.ethz.ch/~asl-datasets/2018-weedMap-dataset-release/Orthomosaic/RedEdge.zip) and extract it to a `samples/weedmap_ortho` directory.*
 
 ---
 
 ## 2. Full 5-Fold Cross-Validation Workflow
 
-The entire experimental pipeline, from generating pseudo-labels to training all five models for cross-validation, has been automated.
+The entire experimental pipeline, from generating pseudo-labels to training all five models for cross-validation, can be run with the following commands.
 
-### Step 2.1: Generate Pseudo-Ground Truth for All Folds
+### Step 2.1: Generate Pseudo-Label Maps for All Folds
 
-This step runs the UnsemLabAG labeling pipeline on each of the five WeedMap orthomosaics. It uses the corresponding configuration file (`config/config000.yaml`, etc.) for each field to handle its unique dimensions and parameters.
+This step runs the UnsemLabAG labeling pipeline on each of the five WeedMap orthomosaics. Each command uses a specific configuration file to handle the unique dimensions of each field.
 
 **Note:** This is a computationally intensive process.
 
 ```bash
-# This single command will generate the pseudo-label maps for all 5 fields.
-make generate_all_folds
+make generate CONFIG="config/config000.yaml" && \
+make generate CONFIG="config/config001.yaml" && \
+make generate CONFIG="config/config002.yaml" && \
+make generate CONFIG="config/config003.yaml" && \
+make generate CONFIG="config/config004.yaml"
 ```
-The generated maps will be saved in the `results/` directory (e.g., `results/field_000_generated_label.png`).
+The generated pseudo-label maps will be saved in the `results/` directory.
 
 ### Step 2.2: Extract Patches from All Maps
 
-This command slices the original images and the newly generated pseudo-label maps into smaller patches (e.g., 512x512) suitable for training a neural network.
+Once the full-field pseudo-label maps are generated, this command will slice them and the original images into smaller patches suitable for training the neural network.
 
 ```bash
-# This command extracts patches for all five fields.
-make map_to_images_all_folds
+make map_to_images CONFIG="config/config000.yaml" && \
+make map_to_images CONFIG="config/config001.yaml" && \
+make map_to_images CONFIG="config/config002.yaml" && \
+make map_to_images CONFIG="config/config003.yaml" && \
+make map_to_images CONFIG="config/config004.yaml"
 ```
-The patches will be saved in `results/generated_patches/`.
+*Note: This example assumes the `DATA_PATH` is handled internally by the script based on the config. If you need to pass it as a variable as in your example, please adjust the command accordingly.*
 
 ### Step 2.3: Train All Models for 5-Fold Cross-Validation
 
-This is the final step. It will launch five separate training runs. In each run, one field is used for testing, while the other four are used for training, following the 5-fold cross-validation scheme defined in the config files.
+This is the final step. It will launch five separate training runs. In each run, one field is used for testing, while the other four are used for training, following the 5-fold cross-validation scheme.
 
 ```bash
-# This will train 5 separate models and save the best checkpoint for each.
-make train_all_folds
+make train CONFIG="config/config000.yaml" && \
+make train CONFIG="config/config001.yaml" && \
+make train CONFIG="config/config002.yaml" && \
+make train CONFIG="config/config003.yaml" && \
+make train CONFIG="config/config004.yaml"
 ```
 The trained model checkpoints for each fold will be saved in their respective `experiments/` directory.
 
 ---
 
-## How to Customize and Run Manually
+## How to Test a Trained Model
 
-If you want to run the process for a single field or with a custom configuration, you can use the individual `make` targets.
+To evaluate a specific model checkpoint on its corresponding test set, use the `make test` command.
 
-### 1. Generate Labels for a Single Field
-
-To generate the pseudo-GT for just one field (e.g., field `000`), specify the config file:
 ```bash
-make generate CONFIG="config/config000.yaml"
+# Example: Test the best model from the fold where '000' was the test set
+make test CHECKPOINT="./experiments/path/to/best_model_for_fold_0.ckpt" CONFIG="config/config000.yaml"
 ```
-
-### 2. Extract Patches for a Single Field
-
-After generating the map, extract the patches:
-```bash
-make map_to_images CONFIG="config/config000.yaml"
-```
-
-### 3. Train a Single Model
-
-To train the model for a single fold (e.g., the one where field `000` is the test set):
-```bash
-make train CONFIG="config/config000.yaml"
-```
-
-### 4. Test a Specific Model
-
-To evaluate a saved model checkpoint on its corresponding test set:
-```bash
-make test CHECKPOINT="./experiments/path/to/best_model.ckpt" CONFIG="config/config000.yaml"
-```
+The evaluation results, including F1 scores, will be printed to the console.
 
 ---
 ## Citations
