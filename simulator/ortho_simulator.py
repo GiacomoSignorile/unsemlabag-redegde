@@ -32,7 +32,7 @@ class OrthoSimulator(Simulator):
         ]
         rgb_image_raw = self.world[range_list[2] : range_list[3], range_list[0] : range_list[1], :]
         rgb_image = cv2.resize(rgb_image_raw, tuple(self.sensor.resolution))
-
+        print(f"Range list: {range_list}, GSD: {gsd}")
         return {
             "image": rgb_image,
             "fov": fov_corner,

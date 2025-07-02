@@ -26,7 +26,7 @@ class PhenoBench(LightningDataModule):
     def setup(self, stage=None):
         self.data_train = Data(self.root_dir, "train")
         self.data_val = Data(self.root_dir, "val")
-        self.data_test = Data(self.root_dir, "test")
+        self.data_test = Data(self.root_dir, "val")
 
     def train_dataloader(self):
         loader = DataLoader(

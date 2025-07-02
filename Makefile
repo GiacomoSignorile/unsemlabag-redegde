@@ -17,7 +17,7 @@ PATCHED_DATA_DIR := ./samples/RedEdge_Patches_$(PATCH_SIZE)
 RUN_IN_CONTAINER = docker run -it --gpus all -e DISPLAY=$DISPLAY -v $(FOLDER):/unsemlabag unsemlab-ag
 
 build:
-	docker build . --ssh default --build-arg USER_ID=$(USER_ID) --build-arg GROUP_ID=$(GROUP_ID) -t unsemlab-ag
+	docker build . --build-arg USER_ID=$(USER_ID) --build-arg GROUP_ID=$(GROUP_ID) -t unsemlab-ag
 
 download:
 	$(RUN_IN_CONTAINER) bash -c "./download_assets.sh"
@@ -29,20 +29,19 @@ preprocess_patches:
 	@echo "Patch preprocessing finished."
 
 train:
-	$(RUN_IN_CONTAINER) python3 train.py
+	$(RUN_IN_CONTAINER) python3 train.py -c $(CONFIG)
 	
 generate:
-	$(RUN_IN_CONTAINER) python3 main.py
+	$(RUN_IN_CONTAINER) python3 main.py -c $(CONFIG)
 
 test:
-	$(RUN_IN_CONTAINER) python3 test.py -w $(CHECKPOINT)
+	$(RUN_IN_CONTAINER) python3 test.py -w $(CHECKPOINT) -c $(CONFIG)
 
 map_to_images:
-	$(RUN_IN_CONTAINER) python3 map_to_dataset.py
+	$(RUN_IN_CONTAINER) python3 map_to_dataset.py -e $(DATA_PATH) -c $(CONFIG)
 
 shell:
 	$(RUN_IN_CONTAINER) "bash"
 
 freeze_requirements:
 	pip-compile requirements.in > requirements.txt
-
