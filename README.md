@@ -47,10 +47,10 @@ This step runs the UnsemLabAG labeling pipeline on each of the five WeedMap orth
 **Note:** This is a computationally intensive process.
 
 ```bash
-make generate CONFIG="config/config000.yaml" && \
-make generate CONFIG="config/config001.yaml" && \
-make generate CONFIG="config/config002.yaml" && \
-make generate CONFIG="config/config003.yaml" && \
+make generate CONFIG="config/config000.yaml" && 
+make generate CONFIG="config/config001.yaml" && 
+make generate CONFIG="config/config002.yaml" && 
+make generate CONFIG="config/config003.yaml" && 
 make generate CONFIG="config/config004.yaml"
 ```
 The generated pseudo-label maps will be saved in the `results/` directory.
@@ -60,10 +60,10 @@ The generated pseudo-label maps will be saved in the `results/` directory.
 Once the full-field pseudo-label maps are generated, this command will slice them and the original images into smaller patches suitable for training the neural network.
 
 ```bash
-make map_to_images CONFIG="config/config000.yaml" && \
-make map_to_images CONFIG="config/config001.yaml" && \
-make map_to_images CONFIG="config/config002.yaml" && \
-make map_to_images CONFIG="config/config003.yaml" && \
+make map_to_images CONFIG="config/config000.yaml" && 
+make map_to_images CONFIG="config/config001.yaml" && 
+make map_to_images CONFIG="config/config002.yaml" && 
+make map_to_images CONFIG="config/config003.yaml" && 
 make map_to_images CONFIG="config/config004.yaml"
 ```
 *Note: This example assumes the `DATA_PATH` is handled internally by the script based on the config. If you need to pass it as a variable as in your example, please adjust the command accordingly.*
